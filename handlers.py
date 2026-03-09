@@ -17,6 +17,14 @@ user_states: dict[int, str] = {}
 # Хранение ID сообщений бота для последующего удаления
 user_messages: dict[int, list[int]] = {}
 
+MAIN_MENU_BUTTONS = [
+    [Button.text("📰 Получить сводку", resize=True)],
+    [Button.text("📋 Мои каналы", resize=True)],
+    [Button.text("➕ Добавить канал", resize=True),
+     Button.text("➖ Удалить канал", resize=True)],
+    [Button.text("📚 История", resize=True)],
+]
+
 
 async def track(user_id: int, msg) -> None:
     """Запоминает ID сообщения бота."""
@@ -58,14 +66,7 @@ async def start_handler(event):
     if event.sender_id != YOUR_USER_ID:
         return
     await delete_bot_messages(event.sender_id, event.chat_id)
-    buttons = [
-        [Button.text("📰 Получить сводку", resize=True)],
-        [Button.text("📋 Мои каналы", resize=True)],
-        [Button.text("➕ Добавить канал", resize=True),
-         Button.text("➖ Удалить канал", resize=True)],
-        [Button.text("📚 История", resize=True)],
-    ]
-    msg = await event.respond("Привет! Выбери действие:", buttons=buttons)
+    msg = await event.respond("Привет! Выбери действие:", buttons=MAIN_MENU_BUTTONS)
     await track(event.sender_id, msg)
 
 
@@ -111,6 +112,7 @@ async def history_handler(event):
         url = f"http://103.228.169.198:{WEB_PORT}/summary/{s['id']}"
         buttons.append([Button.url(label, url)])
 
+    buttons.append([Button.inline("🏠 Главное меню", data="menu")])
     msg = await event.respond("📚 Сводки за последние 30 дней:", buttons=buttons)
     await track(event.sender_id, msg)
 
@@ -145,7 +147,10 @@ async def summary_request_handler(event):
         await delete_bot_messages(event.sender_id, event.chat_id)
         msg = await event.respond(
             f"✅ Сводка №{summary_id} за {datetime.date.today().strftime('%d.%m.%Y')}",
-            buttons=[Button.url("🌐 Читать", url)]
+            buttons=[
+                [Button.url("🌐 Читать", url)],
+                [Button.inline("🏠 Главное меню", data="menu")],
+            ]
         )
         await track(event.sender_id, msg)
 
@@ -167,6 +172,7 @@ async def add_channel_start(event):
     buttons = [
         [Button.inline("📋 Выбрать из моих подписок", data="pick_from_subs")],
         [Button.inline("✍️ Ввести вручную", data="add_manual")],
+        [Button.inline("🏠 Главное меню", data="menu")],
     ]
     await event.respond("Как добавить канал?", buttons=buttons)
 
@@ -192,7 +198,7 @@ async def remove_channel_start(event):
             name = ch
         buttons.append([Button.inline(f"❌ {name}", data=f"del:{ch}")])
 
-    buttons.append([Button.inline("🔙 Отмена", data="cancel")])
+    buttons.append([Button.inline("🏠 Главное меню", data="menu")])
     await event.respond("Какой канал удалить?", buttons=buttons)
 
 
@@ -204,6 +210,14 @@ async def callback_handler(event):
         return
 
     data = event.data.decode('utf-8')
+
+    if data == "menu":
+        await event.answer()
+        await event.delete()
+        await delete_bot_messages(event.sender_id, event.chat_id)
+        msg = await bot_client.send_message(event.chat_id, "Главное меню:", buttons=MAIN_MENU_BUTTONS)
+        await track(event.sender_id, msg)
+        return
 
     if data == "cancel":
         await event.answer("Отменено")

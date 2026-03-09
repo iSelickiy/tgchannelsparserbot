@@ -10,14 +10,14 @@ scheduler = AsyncIOScheduler()
 
 async def daily_summary_job():
     """Ежедневная задача: собрать новости и отправить сводку."""
-    from messages import get_unread_messages_from_channels, mark_messages_as_read
+    from messages import get_messages_by_time
     from summarizer import summarize_texts
     from storage import save_summary
     from clients import bot_client
 
     logger.info("Запуск ежедневной сводки...")
     try:
-        unread_data, all_texts = await get_unread_messages_from_channels()
+        messages_data, all_texts = await get_messages_by_time(hours=25)
 
         if not all_texts:
             await bot_client.send_message(YOUR_USER_ID, "☀️ Доброе утро! Новых сообщений нет.")
@@ -25,14 +25,17 @@ async def daily_summary_job():
 
         summary = await summarize_texts(all_texts)
         summary_id = save_summary(summary, len(all_texts))
+        url = f"http://103.228.169.198:{WEB_PORT}/summary/{summary_id}"
 
-        # Отправляем сводку (разбиваем на части если длинная)
-        header = f"☀️ **Утренняя сводка**\n\n"
-        footer = f"\n\n🌐 http://103.228.169.198:{WEB_PORT}/summary/{summary_id}"
-        full_text = header + summary + footer
-
-        await _send_long_message_direct(bot_client, YOUR_USER_ID, full_text)
-        await mark_messages_as_read(unread_data)
+        import datetime as _dt
+        date_str = _dt.date.today().strftime('%d.%m.%Y')
+        from telethon import Button as _Button
+        await bot_client.send_message(
+            YOUR_USER_ID,
+            f"☀️ **Утренняя сводка за {date_str}** — {len(all_texts)} сообщ.",
+            buttons=[_Button.url("🌐 Читать сводку", url)],
+            parse_mode='markdown',
+        )
 
     except Exception as e:
         logger.exception("Ошибка в ежедневной сводке")

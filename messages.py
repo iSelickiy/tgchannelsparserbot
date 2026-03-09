@@ -1,8 +1,15 @@
+import re
+import datetime
 import logging
 from clients import user_client
 from channels import load_channels
 
 logger = logging.getLogger(__name__)
+
+
+def is_ad_message(text: str) -> bool:
+    """Проверяет, является ли сообщение рекламным по наличию маркировки erid."""
+    return bool(re.search(r'\berid\b', text, re.IGNORECASE))
 
 
 async def get_unread_messages_from_channels() -> tuple[dict[int, list], list[str]]:
@@ -49,7 +56,7 @@ async def get_unread_messages_from_channels() -> tuple[dict[int, list], list[str
                     text = msg.text or msg.message or ''
                     if not text and msg.media:
                         text = "[Медиа без текста]"
-                    if text:
+                    if text and not is_ad_message(text):
                         # Формируем ссылку на оригинальный пост
                         if getattr(entity, 'username', None):
                             link = f"https://t.me/{entity.username}/{msg.id}"
@@ -65,6 +72,52 @@ async def get_unread_messages_from_channels() -> tuple[dict[int, list], list[str
             logger.error(f"Ошибка при обработке канала {channel_identifier}: {e}")
 
     return unread_data, all_texts
+
+
+async def get_messages_by_time(hours: int = 25) -> tuple[dict[int, list], list[str]]:
+    """
+    Собирает все сообщения из каналов за последние N часов.
+    Используется для регулярной (ежедневной) выгрузки.
+    Рекламные сообщения (с маркировкой erid) пропускаются.
+    """
+    from_date = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=hours)
+
+    all_messages_data: dict[int, list] = {}
+    all_texts: list[str] = []
+
+    channels = load_channels()
+
+    for channel_identifier in channels:
+        try:
+            entity = await user_client.get_entity(channel_identifier)
+            messages = []
+
+            async for msg in user_client.iter_messages(entity, limit=None):
+                if msg.date < from_date:
+                    break
+                messages.append(msg)
+
+            if messages:
+                all_messages_data[entity.id] = messages
+                for msg in messages:
+                    text = msg.text or msg.message or ''
+                    if not text and msg.media:
+                        text = "[Медиа без текста]"
+                    if text and not is_ad_message(text):
+                        if getattr(entity, 'username', None):
+                            link = f"https://t.me/{entity.username}/{msg.id}"
+                        else:
+                            link = f"https://t.me/c/{entity.id}/{msg.id}"
+                        all_texts.append(
+                            f"Канал: {entity.title}\nСсылка: {link}\n{text}"
+                        )
+
+                logger.info(f"Загружено {len(messages)} сообщений за {hours}ч из {channel_identifier}.")
+
+        except Exception as e:
+            logger.error(f"Ошибка при обработке канала {channel_identifier}: {e}")
+
+    return all_messages_data, all_texts
 
 
 async def mark_messages_as_read(unread_data: dict[int, list]):
