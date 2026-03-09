@@ -33,13 +33,11 @@ async def view_summary(request):
     return {'summary': summary, 'html_content': html_content}
 
 
-@routes.static('/static', 'static')
-
-
 async def create_web_app():
     app = web.Application()
     aiohttp_jinja2.setup(app, loader=jinja2.FileSystemLoader('templates'))
     app.add_routes(routes)
+    app.router.add_static('/static', 'static')
     return app
 
 
