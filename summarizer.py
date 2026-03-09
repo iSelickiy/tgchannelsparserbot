@@ -1,7 +1,20 @@
 import asyncio
+import math
 import logging
 from clients import deepseek_client
 from config import DEEPSEEK_MODEL, MAX_CHARS_PER_REQUEST, MAX_CONCURRENT_REQUESTS, TOPIC_PRIORITIES
+
+_SECS_PER_API_CALL = 140  # эмпирически: ~2 мин 20 сек на один вызов DeepSeek
+
+
+def _estimate_minutes(chunks: int) -> int:
+    """Грубая оценка времени ожидания в минутах."""
+    if chunks == 1:
+        api_calls = 1
+    else:
+        parallel_rounds = math.ceil(chunks / MAX_CONCURRENT_REQUESTS)
+        api_calls = parallel_rounds + 1  # параллельные чанки + итоговый вызов
+    return max(1, round(api_calls * _SECS_PER_API_CALL / 60))
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +124,11 @@ async def summarize_texts(all_texts: list[str], progress_callback=None) -> str:
     chunks = split_texts_into_chunks(all_texts)
 
     if progress_callback:
-        await progress_callback(f"📊 {len(all_texts)} сообщений → {len(chunks)} запросов к AI")
+        est = _estimate_minutes(len(chunks))
+        await progress_callback(
+            f"📊 {len(all_texts)} сообщений → {len(chunks)} запросов к AI\n"
+            f"⏱ Примерное время ожидания: ~{est} мин."
+        )
 
     # Один чанк — обрабатываем за один API-вызов
     if len(chunks) == 1:
