@@ -94,7 +94,11 @@ async def _show_subs_page(event, page: int, edit: bool = True) -> None:
 
     text = f"Выбери каналы для добавления (стр. {page + 1}/{total_pages}):"
     if edit:
-        await event.edit(text, buttons=buttons)
+        try:
+            await event.edit(text, buttons=buttons)
+        except Exception:
+            msg = await bot_client.send_message(event.chat_id, text, buttons=buttons)
+            await track(event.sender_id, msg)
     else:
         msg = await event.respond(text, buttons=buttons)
         await track(event.sender_id, msg)
@@ -136,7 +140,11 @@ async def _show_del_menu(event, edit: bool = False) -> None:
 
     text = "Выбери каналы для удаления:"
     if edit:
-        await event.edit(text, buttons=buttons)
+        try:
+            await event.edit(text, buttons=buttons)
+        except Exception:
+            msg = await bot_client.send_message(event.chat_id, text, buttons=buttons)
+            await track(event.sender_id, msg)
     else:
         msg = await event.respond(text, buttons=buttons)
         await track(event.sender_id, msg)
