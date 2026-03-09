@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import datetime
 from telethon import events, Button
@@ -8,14 +9,16 @@ from messages import get_unread_messages_from_channels, mark_messages_as_read
 from summarizer import summarize_texts
 from storage import save_summary, get_recent_summaries
 
-
 logger = logging.getLogger(__name__)
 
-# Состояния диалога для каждого пользователя
+# ─── Состояния ──────────────────────────────────────────────────────────────
 user_states: dict[int, str] = {}
+user_messages: dict[int, list[int]] = {}   # ID сообщений бота для удаления
+user_add_sel: dict[int, set[str]] = {}     # каналы, выбранные для добавления
+user_del_sel: dict[int, set[str]] = {}     # каналы, выбранные для удаления
+user_page: dict[int, int] = {}             # текущая страница списка подписок
 
-# Хранение ID сообщений бота для последующего удаления
-user_messages: dict[int, list[int]] = {}
+PAGE_SIZE = 8  # каналов на страницу
 
 MAIN_MENU_BUTTONS = [
     [Button.text("📰 Получить сводку", resize=True)],
@@ -26,13 +29,13 @@ MAIN_MENU_BUTTONS = [
 ]
 
 
+# ─── Вспомогательные функции ─────────────────────────────────────────────────
+
 async def track(user_id: int, msg) -> None:
-    """Запоминает ID сообщения бота."""
     user_messages.setdefault(user_id, []).append(msg.id)
 
 
 async def delete_bot_messages(user_id: int, chat_id: int) -> None:
-    """Удаляет все сохранённые сообщения бота для пользователя."""
     ids = user_messages.pop(user_id, [])
     if ids:
         try:
@@ -41,7 +44,105 @@ async def delete_bot_messages(user_id: int, chat_id: int) -> None:
             pass
 
 
-# === Главное меню ===
+async def _show_subs_page(event, page: int, edit: bool = True) -> None:
+    """
+    Отображает страницу подписок для мультивыбора каналов на добавление.
+    Первый вызов загружает подписки (~медленно), повторные — из кэша (мгновенно).
+    """
+    subscribed = await get_subscribed_channels(user_client)
+    current = set(load_channels())
+    available = [
+        ch for ch in subscribed
+        if ch['username'] not in current and str(ch['id']) not in current
+    ]
+
+    if not available:
+        text = "Все твои каналы уже добавлены!"
+        if edit:
+            await event.edit(text)
+        else:
+            msg = await event.respond(text)
+            await track(event.sender_id, msg)
+        return
+
+    total_pages = (len(available) + PAGE_SIZE - 1) // PAGE_SIZE
+    page = max(0, min(page, total_pages - 1))
+    user_page[event.sender_id] = page
+
+    page_items = available[page * PAGE_SIZE:(page + 1) * PAGE_SIZE]
+    sel = user_add_sel.get(event.sender_id, set())
+
+    buttons = []
+    for ch in page_items:
+        mark = "✅" if ch['username'] in sel else "⬜"
+        label = f"{mark} {ch['title']} ({ch['unread_count']} непрочит.)"
+        buttons.append([Button.inline(label, data=f"sadd:{ch['username']}")])
+
+    if total_pages > 1:
+        nav = []
+        if page > 0:
+            nav.append(Button.inline("◀️", data=f"subs:{page - 1}"))
+        nav.append(Button.inline(f"{page + 1} / {total_pages}", data="noop"))
+        if page < total_pages - 1:
+            nav.append(Button.inline("▶️", data=f"subs:{page + 1}"))
+        buttons.append(nav)
+
+    if sel:
+        buttons.append([Button.inline(f"✅ Добавить выбранные ({len(sel)})", data="addok")])
+
+    buttons.append([Button.inline("🏠 Главное меню", data="menu")])
+
+    text = f"Выбери каналы для добавления (стр. {page + 1}/{total_pages}):"
+    if edit:
+        await event.edit(text, buttons=buttons)
+    else:
+        msg = await event.respond(text, buttons=buttons)
+        await track(event.sender_id, msg)
+
+
+async def _show_del_menu(event, edit: bool = False) -> None:
+    """
+    Отображает список отслеживаемых каналов для мультивыбора удаления.
+    Имена каналов разрешаются параллельно.
+    """
+    channels = load_channels()
+    if not channels:
+        text = "Список каналов пуст."
+        if edit:
+            await event.edit(text)
+        else:
+            await event.respond(text)
+        return
+
+    async def resolve(ch_id: str) -> tuple[str, str]:
+        try:
+            entity = await user_client.get_entity(ch_id)
+            return ch_id, getattr(entity, 'title', ch_id)
+        except Exception:
+            return ch_id, ch_id
+
+    resolved = await asyncio.gather(*[resolve(ch) for ch in channels])
+    sel = user_del_sel.get(event.sender_id, set())
+
+    buttons = []
+    for ch_id, name in resolved:
+        mark = "✅" if ch_id in sel else "⬜"
+        buttons.append([Button.inline(f"{mark} {name}", data=f"dtog:{ch_id}")])
+
+    if sel:
+        buttons.append([Button.inline(f"🗑 Удалить выбранные ({len(sel)})", data="delok")])
+
+    buttons.append([Button.inline("🏠 Главное меню", data="menu")])
+
+    text = "Выбери каналы для удаления:"
+    if edit:
+        await event.edit(text, buttons=buttons)
+    else:
+        msg = await event.respond(text, buttons=buttons)
+        await track(event.sender_id, msg)
+
+
+# ─── Главное меню ─────────────────────────────────────────────────────────────
 
 @bot_client.on(events.NewMessage(pattern='/start'))
 async def start_handler(event):
@@ -52,7 +153,7 @@ async def start_handler(event):
     await track(event.sender_id, msg)
 
 
-# === Список каналов ===
+# ─── Список каналов ───────────────────────────────────────────────────────────
 
 @bot_client.on(events.NewMessage(func=lambda e: e.text == "📋 Мои каналы"))
 async def list_channels_handler(event):
@@ -64,16 +165,21 @@ async def list_channels_handler(event):
         await event.respond("Список каналов пуст. Добавь каналы кнопкой ➕")
         return
 
-    text = "**Твои каналы:**\n\n"
-    for i, ch in enumerate(channels, 1):
+    async def resolve(ch):
         try:
             entity = await user_client.get_entity(ch)
-            name = getattr(entity, 'title', ch)
-            text += f"{i}. {name} (`{ch}`)\n"
+            return getattr(entity, 'title', ch), ch
         except Exception:
-            text += f"{i}. {ch}\n"
+            return ch, ch
 
+    resolved = await asyncio.gather(*[resolve(ch) for ch in channels])
+    text = "**Твои каналы:**\n\n" + "".join(
+        f"{i}. {name} (`{ch}`)\n" for i, (name, ch) in enumerate(resolved, 1)
+    )
     await event.respond(text, parse_mode='markdown')
+
+
+# ─── История ──────────────────────────────────────────────────────────────────
 
 @bot_client.on(events.NewMessage(func=lambda e: e.text == "📚 История"))
 async def history_handler(event):
@@ -91,14 +197,14 @@ async def history_handler(event):
     buttons = []
     for s in summaries:
         label = f"№{s['id']} — {s['date']} ({s['message_count']} сообщ.)"
-        url = f"{SERVER_BASE_URL}/summary/{s['id']}"
-        buttons.append([Button.url(label, url)])
+        buttons.append([Button.url(label, f"{SERVER_BASE_URL}/summary/{s['id']}")])
 
     buttons.append([Button.inline("🏠 Главное меню", data="menu")])
     msg = await event.respond("📚 Сводки за последние 30 дней:", buttons=buttons)
     await track(event.sender_id, msg)
 
-# === Получить сводку ===
+
+# ─── Получить сводку ──────────────────────────────────────────────────────────
 
 @bot_client.on(events.NewMessage(func=lambda e: e.text == "📰 Получить сводку"))
 async def summary_request_handler(event):
@@ -124,18 +230,16 @@ async def summary_request_handler(event):
 
         summary = await summarize_texts(all_texts, progress_callback=progress)
         summary_id = save_summary(summary, len(all_texts))
-        url = f"{SERVER_BASE_URL}/summary/{summary_id}"
 
         await delete_bot_messages(event.sender_id, event.chat_id)
         msg = await event.respond(
             f"✅ Сводка №{summary_id} за {datetime.date.today().strftime('%d.%m.%Y')}",
             buttons=[
-                [Button.url("🌐 Читать", url)],
+                [Button.url("🌐 Читать", f"{SERVER_BASE_URL}/summary/{summary_id}")],
                 [Button.inline("🏠 Главное меню", data="menu")],
             ]
         )
         await track(event.sender_id, msg)
-
         await mark_messages_as_read(unread_data)
 
     except Exception as e:
@@ -145,46 +249,33 @@ async def summary_request_handler(event):
         await track(event.sender_id, msg)
 
 
-# === Добавить канал ===
+# ─── Добавить канал ───────────────────────────────────────────────────────────
 
 @bot_client.on(events.NewMessage(func=lambda e: e.text == "➕ Добавить канал"))
 async def add_channel_start(event):
     if event.sender_id != YOUR_USER_ID:
         return
-    buttons = [
-        [Button.inline("📋 Выбрать из моих подписок", data="pick_from_subs")],
-        [Button.inline("✍️ Ввести вручную", data="add_manual")],
-        [Button.inline("🏠 Главное меню", data="menu")],
-    ]
-    await event.respond("Как добавить канал?", buttons=buttons)
+    msg = await event.respond(
+        "Как добавить канал?",
+        buttons=[
+            [Button.inline("📋 Выбрать из моих подписок", data="pick_from_subs")],
+            [Button.inline("✍️ Ввести вручную", data="add_manual")],
+            [Button.inline("🏠 Главное меню", data="menu")],
+        ]
+    )
+    await track(event.sender_id, msg)
 
 
-# === Удалить канал ===
+# ─── Удалить канал ────────────────────────────────────────────────────────────
 
 @bot_client.on(events.NewMessage(func=lambda e: e.text == "➖ Удалить канал"))
 async def remove_channel_start(event):
     if event.sender_id != YOUR_USER_ID:
         return
-
-    channels = load_channels()
-    if not channels:
-        await event.respond("Список каналов пуст.")
-        return
-
-    buttons = []
-    for ch in channels:
-        try:
-            entity = await user_client.get_entity(ch)
-            name = getattr(entity, 'title', ch)
-        except Exception:
-            name = ch
-        buttons.append([Button.inline(f"❌ {name}", data=f"del:{ch}")])
-
-    buttons.append([Button.inline("🏠 Главное меню", data="menu")])
-    await event.respond("Какой канал удалить?", buttons=buttons)
+    await _show_del_menu(event, edit=False)
 
 
-# === Inline-кнопки ===
+# ─── Inline-кнопки ────────────────────────────────────────────────────────────
 
 @bot_client.on(events.CallbackQuery())
 async def callback_handler(event):
@@ -193,12 +284,22 @@ async def callback_handler(event):
 
     data = event.data.decode('utf-8')
 
+    # ── Главное меню ──
     if data == "menu":
         await event.answer()
         await event.delete()
         await delete_bot_messages(event.sender_id, event.chat_id)
-        msg = await bot_client.send_message(event.chat_id, "Главное меню:", buttons=MAIN_MENU_BUTTONS)
+        user_add_sel.pop(event.sender_id, None)
+        user_del_sel.pop(event.sender_id, None)
+        user_page.pop(event.sender_id, None)
+        msg = await bot_client.send_message(
+            event.chat_id, "Главное меню:", buttons=MAIN_MENU_BUTTONS
+        )
         await track(event.sender_id, msg)
+        return
+
+    if data == "noop":
+        await event.answer()
         return
 
     if data == "cancel":
@@ -206,81 +307,88 @@ async def callback_handler(event):
         await event.delete()
         return
 
+    # ── Добавление: ручной ввод ──
     if data == "add_manual":
         await event.answer()
         user_states[event.sender_id] = 'adding_channel'
         await event.edit(
             "Отправь мне ссылку на канал или его @username.\n"
             "Например: `@durov` или `https://t.me/durov`\n\n"
-            "Или нажми /cancel для отмены.",
+            "Или нажми /cancel для отмены."
         )
         return
 
+    # ── Добавление: список подписок (открыть / перейти на страницу) ──
     if data == "pick_from_subs":
         await event.answer("Загружаю подписки...")
-        subscribed = await get_subscribed_channels(user_client)
-        current = load_channels()
-
-        available = [
-            ch for ch in subscribed
-            if ch['username'] not in current and str(ch['id']) not in current
-        ]
-
-        if not available:
-            await event.edit("Все твои каналы уже добавлены!")
-            return
-
-        buttons = []
-        for ch in available[:10]:
-            label = f"{ch['title']} ({ch['unread_count']} непрочит.)"
-            buttons.append([Button.inline(label, data=f"addsub:{ch['username']}")])
-
-        if len(available) > 10:
-            buttons.append([Button.inline(f"... и ещё {len(available) - 10}", data="noop")])
-        buttons.append([Button.inline("🔙 Отмена", data="cancel")])
-        await event.edit("Выбери канал для добавления:", buttons=buttons)
+        user_add_sel.pop(event.sender_id, None)
+        await _show_subs_page(event, 0, edit=True)
         return
 
-    if data == "noop":
+    if data.startswith("subs:"):
         await event.answer()
+        await _show_subs_page(event, int(data[5:]), edit=True)
         return
 
-    if data.startswith("addsub:"):
-        channel_id = data[7:]
-        try:
-            entity = await user_client.get_entity(channel_id)
-            name = getattr(entity, 'title', channel_id)
-            if add_channel(channel_id):
-                await event.answer(f"Канал добавлен!")
-                await event.edit(f"✅ Канал **{name}** добавлен!", parse_mode='markdown')
-            else:
-                await event.answer("Уже в списке")
-                await event.edit(f"Канал **{name}** уже в списке.", parse_mode='markdown')
-        except Exception as e:
-            await event.answer("Ошибка")
-            await event.edit(f"❌ Не удалось добавить: {e}")
+    # ── Добавление: тогл канала ──
+    if data.startswith("sadd:"):
+        username = data[5:]
+        sel = user_add_sel.setdefault(event.sender_id, set())
+        sel.discard(username) if username in sel else sel.add(username)
+        await event.answer()
+        await _show_subs_page(event, user_page.get(event.sender_id, 0), edit=True)
         return
 
-    if data.startswith("del:"):
-        channel_id = data[4:]
-        if remove_channel(channel_id):
-            await event.answer("Канал удалён!")
-            await event.edit(f"✅ Канал `{channel_id}` удалён.", parse_mode='markdown')
-        else:
-            await event.answer("Канал не найден в списке")
+    # ── Добавление: подтверждение ──
+    if data == "addok":
+        sel = user_add_sel.pop(event.sender_id, set())
+        if not sel:
+            await event.answer("Ничего не выбрано")
+            return
+        added = [ch for ch in sel if add_channel(ch)]
+        logger.info(f"Добавлено каналов: {added}")
+        await event.answer(f"Добавлено: {len(added)}")
+        await event.edit(
+            f"✅ Добавлено {len(added)} канал(ов):\n" +
+            "\n".join(f"• `{ch}`" for ch in added),
+            parse_mode='markdown'
+        )
         return
-    
+
+    # ── Удаление: тогл канала ──
+    if data.startswith("dtog:"):
+        ch_id = data[5:]
+        sel = user_del_sel.setdefault(event.sender_id, set())
+        sel.discard(ch_id) if ch_id in sel else sel.add(ch_id)
+        await event.answer()
+        await _show_del_menu(event, edit=True)
+        return
+
+    # ── Удаление: подтверждение ──
+    if data == "delok":
+        sel = user_del_sel.pop(event.sender_id, set())
+        if not sel:
+            await event.answer("Ничего не выбрано")
+            return
+        removed = [ch for ch in sel if remove_channel(ch)]
+        logger.info(f"Удалено каналов: {removed}")
+        await event.answer(f"Удалено: {len(removed)}")
+        await event.edit(
+            f"✅ Удалено {len(removed)} канал(ов):\n" +
+            "\n".join(f"• `{ch}`" for ch in removed),
+            parse_mode='markdown'
+        )
+        return
 
 
-# === Текстовые сообщения (диалог добавления канала) ===
+# ─── Текстовые сообщения (ручной ввод канала) ────────────────────────────────
 
 @bot_client.on(events.NewMessage())
 async def text_handler(event):
     if event.sender_id != YOUR_USER_ID:
         return
 
-    state = user_states.get(event.sender_id)
-    if state != 'adding_channel':
+    if user_states.get(event.sender_id) != 'adding_channel':
         return
 
     if event.text == '/cancel':
@@ -289,16 +397,14 @@ async def text_handler(event):
         return
 
     channel_input = event.text.strip()
-
-    # Нормализуем ввод
     if channel_input.startswith('https://t.me/'):
         channel_input = '@' + channel_input.split('/')[-1]
 
     try:
         entity = await user_client.get_entity(channel_input)
         name = getattr(entity, 'title', channel_input)
-
         if add_channel(channel_input):
+            logger.info(f"Канал добавлен вручную: {channel_input}")
             await event.respond(f"✅ Канал **{name}** добавлен!", parse_mode='markdown')
         else:
             await event.respond(f"Канал **{name}** уже в списке.", parse_mode='markdown')

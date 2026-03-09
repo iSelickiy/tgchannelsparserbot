@@ -1,5 +1,6 @@
 import json
 import os
+import time
 import logging
 
 logger = logging.getLogger(__name__)
@@ -55,11 +56,22 @@ def remove_channel(channel_id: str) -> bool:
     return False
 
 
+_subs_cache: list[dict] | None = None
+_subs_cache_ts: float = 0.0
+_SUBS_TTL: float = 300.0  # 5 минут
+
+
 async def get_subscribed_channels(user_client) -> list[dict]:
     """
     Получает список каналов, на которые подписан пользователь.
+    Результат кэшируется на 5 минут — повторные вызовы мгновенны.
     Возвращает список словарей {id, title, username, unread_count}.
     """
+    global _subs_cache, _subs_cache_ts
+
+    if _subs_cache is not None and time.monotonic() - _subs_cache_ts < _SUBS_TTL:
+        return _subs_cache
+
     from telethon.tl.types import Channel
 
     channels = []
@@ -74,4 +86,14 @@ async def get_subscribed_channels(user_client) -> list[dict]:
             })
 
     channels.sort(key=lambda x: x['unread_count'], reverse=True)
+    _subs_cache = channels
+    _subs_cache_ts = time.monotonic()
+    logger.info(f"Подписки загружены: {len(channels)} каналов")
     return channels
+
+
+def invalidate_subs_cache():
+    """Сбрасывает кэш подписок (вызывать после добавления/удаления каналов)."""
+    global _subs_cache, _subs_cache_ts
+    _subs_cache = None
+    _subs_cache_ts = 0.0
