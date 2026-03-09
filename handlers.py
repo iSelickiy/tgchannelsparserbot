@@ -2,7 +2,7 @@ import logging
 import datetime
 from telethon import events, Button
 from clients import bot_client, user_client
-from config import YOUR_USER_ID, WEB_PORT
+from config import YOUR_USER_ID, SERVER_BASE_URL
 from channels import load_channels, add_channel, remove_channel, get_subscribed_channels
 from messages import get_unread_messages_from_channels, mark_messages_as_read
 from summarizer import summarize_texts
@@ -39,24 +39,6 @@ async def delete_bot_messages(user_id: int, chat_id: int) -> None:
             await bot_client.delete_messages(chat_id, ids)
         except Exception:
             pass
-
-
-async def send_long_message(event, text: str, parse_mode='markdown'):
-    """Отправляет длинный текст, разбивая на части по 4000 символов."""
-    MAX_LEN = 4000
-    if len(text) <= MAX_LEN:
-        await event.respond(text, parse_mode=parse_mode)
-        return
-
-    while text:
-        if len(text) <= MAX_LEN:
-            await event.respond(text, parse_mode=parse_mode)
-            break
-        cut = text.rfind('\n', 0, MAX_LEN)
-        if cut == -1:
-            cut = MAX_LEN
-        await event.respond(text[:cut], parse_mode=parse_mode)
-        text = text[cut:].lstrip('\n')
 
 
 # === Главное меню ===
@@ -109,7 +91,7 @@ async def history_handler(event):
     buttons = []
     for s in summaries:
         label = f"№{s['id']} — {s['date']} ({s['message_count']} сообщ.)"
-        url = f"http://103.228.169.198:{WEB_PORT}/summary/{s['id']}"
+        url = f"{SERVER_BASE_URL}/summary/{s['id']}"
         buttons.append([Button.url(label, url)])
 
     buttons.append([Button.inline("🏠 Главное меню", data="menu")])
@@ -142,7 +124,7 @@ async def summary_request_handler(event):
 
         summary = await summarize_texts(all_texts, progress_callback=progress)
         summary_id = save_summary(summary, len(all_texts))
-        url = f"http://103.228.169.198:{WEB_PORT}/summary/{summary_id}"
+        url = f"{SERVER_BASE_URL}/summary/{summary_id}"
 
         await delete_bot_messages(event.sender_id, event.chat_id)
         msg = await event.respond(

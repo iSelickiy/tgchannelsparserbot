@@ -6,21 +6,35 @@ logger = logging.getLogger(__name__)
 
 CHANNELS_FILE = "channels.json"
 
+_cache: list[str] | None = None
+
 
 def load_channels() -> list[str]:
-    """Загружает список каналов из JSON-файла."""
+    """Загружает список каналов из JSON-файла. Результат кэшируется в памяти."""
+    global _cache
+    if _cache is not None:
+        return _cache
+
     if not os.path.exists(CHANNELS_FILE):
         # Миграция: при первом запуске берём из .env
         env_channels = os.getenv('CHANNELS', '')
         channels = [ch.strip() for ch in env_channels.split(',') if ch.strip()]
-        save_channels(channels)
+        _save_and_cache(channels)
         logger.info(f"Мигрировано {len(channels)} каналов из .env в {CHANNELS_FILE}")
-        return channels
+        return _cache
+
     with open(CHANNELS_FILE, 'r') as f:
-        return json.load(f)
+        _cache = json.load(f)
+    return _cache
 
 
 def save_channels(channels: list[str]):
+    _save_and_cache(channels)
+
+
+def _save_and_cache(channels: list[str]):
+    global _cache
+    _cache = channels
     with open(CHANNELS_FILE, 'w') as f:
         json.dump(channels, f, ensure_ascii=False, indent=2)
 
@@ -28,8 +42,7 @@ def save_channels(channels: list[str]):
 def add_channel(channel_id: str) -> bool:
     channels = load_channels()
     if channel_id not in channels:
-        channels.append(channel_id)
-        save_channels(channels)
+        _save_and_cache(channels + [channel_id])
         return True
     return False
 
@@ -37,8 +50,7 @@ def add_channel(channel_id: str) -> bool:
 def remove_channel(channel_id: str) -> bool:
     channels = load_channels()
     if channel_id in channels:
-        channels.remove(channel_id)
-        save_channels(channels)
+        _save_and_cache([ch for ch in channels if ch != channel_id])
         return True
     return False
 

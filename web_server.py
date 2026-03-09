@@ -21,7 +21,10 @@ async def index(request):
 @routes.get('/summary/{id}')
 @aiohttp_jinja2.template('summary.html')
 async def view_summary(request):
-    summary_id = int(request.match_info['id'])
+    try:
+        summary_id = int(request.match_info['id'])
+    except ValueError:
+        raise web.HTTPBadRequest()
     summary = get_summary(summary_id)
     if not summary:
         raise web.HTTPNotFound()

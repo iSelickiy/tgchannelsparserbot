@@ -113,21 +113,24 @@ async def summarize_texts(all_texts: list[str], progress_callback=None) -> str:
     if progress_callback:
         await progress_callback(f"📊 {len(all_texts)} сообщений → {len(chunks)} запросов к AI")
 
+    # Один чанк — обрабатываем за один API-вызов
+    if len(chunks) == 1:
+        if progress_callback:
+            await progress_callback("⏳ Формирую сводку...")
+        return await call_deepseek(FINAL_PROMPT.format(text=chunks[0]))
+
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
     async def process_chunk(chunk: str, index: int) -> str:
         async with semaphore:
             if progress_callback:
                 await progress_callback(f"⏳ Обрабатываю часть {index + 1}/{len(chunks)}...")
-            prompt = CHUNK_PROMPT.format(text=chunk)
-            return await call_deepseek(prompt)
+            return await call_deepseek(CHUNK_PROMPT.format(text=chunk))
 
-    tasks = [process_chunk(c, i) for i, c in enumerate(chunks)]
-    partial = await asyncio.gather(*tasks)
+    partial = await asyncio.gather(*[process_chunk(c, i) for i, c in enumerate(chunks)])
 
     if progress_callback:
         await progress_callback("🔗 Собираю итоговую сводку...")
 
     combined = "\n\n---\n\n".join(partial)
-    final_prompt = FINAL_PROMPT.format(text=combined)
-    return await call_deepseek(final_prompt)
+    return await call_deepseek(FINAL_PROMPT.format(text=combined))

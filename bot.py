@@ -2,7 +2,7 @@
 import asyncio
 import logging
 from clients import user_client, bot_client
-from config import BOT_TOKEN
+from config import BOT_TOKEN, SUMMARY_RETENTION_DAYS
 from scheduler import setup_scheduler
 from web_server import start_web_server
 from storage import cleanup_old_summaries, init_db
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 async def main():
     # Инициализация БД и очистка старых сводок
     init_db()
-    cleanup_old_summaries(30)
+    cleanup_old_summaries(SUMMARY_RETENTION_DAYS)
 
     # Запуск Telethon клиентов
     await user_client.start()

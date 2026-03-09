@@ -17,6 +17,8 @@ DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
 
 # Веб-сервер
 WEB_PORT = int(os.getenv('WEB_PORT', 8080))
+SERVER_HOST = os.getenv('SERVER_HOST', '103.228.169.198')
+SERVER_BASE_URL = f"http://{SERVER_HOST}:{WEB_PORT}"
 SUMMARY_RETENTION_DAYS = 30
 
 # Приоритеты тем для суммаризации
