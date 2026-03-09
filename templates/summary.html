@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Сводка за {{ summary.date }}</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="back-link">← Все сводки</a>
+        <h1>Сводка за {{ summary.date }}</h1>
+        <div class="meta">{{ summary.message_count }} сообщений обработано</div>
+        <div class="content">
+            {{ html_content | safe }}
+        </div>
+    </div>
+</body>
+</html>
