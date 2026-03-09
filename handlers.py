@@ -95,8 +95,7 @@ async def summary_request_handler(event):
         await event.respond("📝 **Готовая сводка:**", parse_mode='markdown')
         await send_long_message(event, summary)
         await event.respond(
-            f"✅ Готово! 🌐 [Читать на сайте](http://localhost:{WEB_PORT}/summary/{summary_id})",
-            parse_mode='markdown'
+            f"✅ Готово! 🌐 http://103.228.169.198:{WEB_PORT}/summary/{summary_id}"
         )
 
         await mark_messages_as_read(unread_data)

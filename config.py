@@ -10,7 +10,7 @@ DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY')
 YOUR_USER_ID = int(os.getenv('YOUR_USER_ID'))
 
 # Настройки суммаризации
-MAX_CHARS_PER_REQUEST = 30_000
+MAX_CHARS_PER_REQUEST = 150_000
 MAX_CONCURRENT_REQUESTS = 5
 DEEPSEEK_MODEL = "deepseek-chat"
 DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"

@@ -28,7 +28,7 @@ async def daily_summary_job():
 
         # Отправляем сводку (разбиваем на части если длинная)
         header = f"☀️ **Утренняя сводка**\n\n"
-        footer = f"\n\n🌐 [Читать на сайте](http://localhost:{WEB_PORT}/summary/{summary_id})"
+        footer = f"\n\n🌐 http://103.228.169.198:{WEB_PORT}/summary/{summary_id}"
         full_text = header + summary + footer
 
         await _send_long_message_direct(bot_client, YOUR_USER_ID, full_text)
