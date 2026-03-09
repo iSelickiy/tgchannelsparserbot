@@ -14,6 +14,24 @@ logger = logging.getLogger(__name__)
 # Состояния диалога для каждого пользователя
 user_states: dict[int, str] = {}
 
+# Хранение ID сообщений бота для последующего удаления
+user_messages: dict[int, list[int]] = {}
+
+
+async def track(user_id: int, msg) -> None:
+    """Запоминает ID сообщения бота."""
+    user_messages.setdefault(user_id, []).append(msg.id)
+
+
+async def delete_bot_messages(user_id: int, chat_id: int) -> None:
+    """Удаляет все сохранённые сообщения бота для пользователя."""
+    ids = user_messages.pop(user_id, [])
+    if ids:
+        try:
+            await bot_client.delete_messages(chat_id, ids)
+        except Exception:
+            pass
+
 
 async def send_long_message(event, text: str, parse_mode='markdown'):
     """Отправляет длинный текст, разбивая на части по 4000 символов."""
@@ -39,6 +57,7 @@ async def send_long_message(event, text: str, parse_mode='markdown'):
 async def start_handler(event):
     if event.sender_id != YOUR_USER_ID:
         return
+    await delete_bot_messages(event.sender_id, event.chat_id)
     buttons = [
         [Button.text("📰 Получить сводку", resize=True)],
         [Button.text("📋 Мои каналы", resize=True)],
@@ -46,7 +65,8 @@ async def start_handler(event):
          Button.text("➖ Удалить канал", resize=True)],
         [Button.text("📚 История", resize=True)],
     ]
-    await event.respond("Привет! Выбери действие:", buttons=buttons)
+    msg = await event.respond("Привет! Выбери действие:", buttons=buttons)
+    await track(event.sender_id, msg)
 
 
 # === Список каналов ===
@@ -77,18 +97,22 @@ async def history_handler(event):
     if event.sender_id != YOUR_USER_ID:
         return
 
+    await delete_bot_messages(event.sender_id, event.chat_id)
     summaries = get_recent_summaries(30)
 
     if not summaries:
-        await event.respond("Сводок пока нет.")
+        msg = await event.respond("Сводок пока нет.")
+        await track(event.sender_id, msg)
         return
 
     buttons = []
     for s in summaries:
         label = f"№{s['id']} — {s['date']} ({s['message_count']} сообщ.)"
-        buttons.append([Button.inline(label, data=f"open:{s['id']}")])
+        url = f"http://103.228.169.198:{WEB_PORT}/summary/{s['id']}"
+        buttons.append([Button.url(label, url)])
 
-    await event.respond("📚 Сводки за последние 30 дней:", buttons=buttons)
+    msg = await event.respond("📚 Сводки за последние 30 дней:", buttons=buttons)
+    await track(event.sender_id, msg)
 
 # === Получить сводку ===
 
@@ -97,31 +121,41 @@ async def summary_request_handler(event):
     if event.sender_id != YOUR_USER_ID:
         return
 
-    await event.respond("⏳ Собираю непрочитанные сообщения из каналов...")
+    await delete_bot_messages(event.sender_id, event.chat_id)
+    msg = await event.respond("⏳ Собираю непрочитанные сообщения из каналов...")
+    await track(event.sender_id, msg)
 
     try:
         unread_data, all_texts = await get_unread_messages_from_channels()
 
         if not all_texts:
-            await event.respond("✅ Нет непрочитанных сообщений.")
+            await delete_bot_messages(event.sender_id, event.chat_id)
+            msg = await event.respond("✅ Нет непрочитанных сообщений.")
+            await track(event.sender_id, msg)
             return
 
-        async def progress(msg: str):
-            await event.respond(msg)
+        async def progress(text: str):
+            m = await event.respond(text)
+            await track(event.sender_id, m)
 
         summary = await summarize_texts(all_texts, progress_callback=progress)
         summary_id = save_summary(summary, len(all_texts))
+        url = f"http://103.228.169.198:{WEB_PORT}/summary/{summary_id}"
 
-        await event.respond(
+        await delete_bot_messages(event.sender_id, event.chat_id)
+        msg = await event.respond(
             f"✅ Сводка №{summary_id} за {datetime.date.today().strftime('%d.%m.%Y')}",
-            buttons=[Button.inline("🌐 Читать", data=f"open:{summary_id}")]
+            buttons=[Button.url("🌐 Читать", url)]
         )
+        await track(event.sender_id, msg)
 
         await mark_messages_as_read(unread_data)
 
     except Exception as e:
         logger.exception("Ошибка при получении сводки")
-        await event.respond(f"❌ Произошла ошибка: {e}")
+        await delete_bot_messages(event.sender_id, event.chat_id)
+        msg = await event.respond(f"❌ Произошла ошибка: {e}")
+        await track(event.sender_id, msg)
 
 
 # === Добавить канал ===
@@ -240,11 +274,6 @@ async def callback_handler(event):
             await event.answer("Канал не найден в списке")
         return
     
-    if data.startswith("open:"):
-        summary_id = data[5:]
-        url = f"http://103.228.169.198:{WEB_PORT}/summary/{summary_id}"
-        await event.answer(url, alert=True)
-        return
 
 
 # === Текстовые сообщения (диалог добавления канала) ===
