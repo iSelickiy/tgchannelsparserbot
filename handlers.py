@@ -1,11 +1,13 @@
 import logging
+import datetime
 from telethon import events, Button
 from clients import bot_client, user_client
 from config import YOUR_USER_ID, WEB_PORT
 from channels import load_channels, add_channel, remove_channel, get_subscribed_channels
 from messages import get_unread_messages_from_channels, mark_messages_as_read
 from summarizer import summarize_texts
-from storage import save_summary
+from storage import save_summary, get_recent_summaries
+
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +44,7 @@ async def start_handler(event):
         [Button.text("📋 Мои каналы", resize=True)],
         [Button.text("➕ Добавить канал", resize=True),
          Button.text("➖ Удалить канал", resize=True)],
+        [Button.text("📚 История", resize=True)],
     ]
     await event.respond("Привет! Выбери действие:", buttons=buttons)
 
@@ -69,6 +72,23 @@ async def list_channels_handler(event):
 
     await event.respond(text, parse_mode='markdown')
 
+@bot_client.on(events.NewMessage(func=lambda e: e.text == "📚 История"))
+async def history_handler(event):
+    if event.sender_id != YOUR_USER_ID:
+        return
+
+    summaries = get_recent_summaries(30)
+
+    if not summaries:
+        await event.respond("Сводок пока нет.")
+        return
+
+    buttons = []
+    for s in summaries:
+        label = f"№{s['id']} — {s['date']} ({s['message_count']} сообщ.)"
+        buttons.append([Button.inline(label, data=f"open:{s['id']}")])
+
+    await event.respond("📚 Сводки за последние 30 дней:", buttons=buttons)
 
 # === Получить сводку ===
 
@@ -92,10 +112,9 @@ async def summary_request_handler(event):
         summary = await summarize_texts(all_texts, progress_callback=progress)
         summary_id = save_summary(summary, len(all_texts))
 
-        await event.respond("📝 **Готовая сводка:**", parse_mode='markdown')
-        await send_long_message(event, summary)
         await event.respond(
-            f"✅ Готово! 🌐 http://103.228.169.198:{WEB_PORT}/summary/{summary_id}"
+            f"✅ Сводка №{summary_id} за {datetime.date.today().strftime('%d.%m.%Y')}",
+            buttons=[Button.inline("🌐 Читать", data=f"open:{summary_id}")]
         )
 
         await mark_messages_as_read(unread_data)
@@ -219,6 +238,12 @@ async def callback_handler(event):
             await event.edit(f"✅ Канал `{channel_id}` удалён.", parse_mode='markdown')
         else:
             await event.answer("Канал не найден в списке")
+        return
+    
+    if data.startswith("open:"):
+        summary_id = data[5:]
+        url = f"http://103.228.169.198:{WEB_PORT}/summary/{summary_id}"
+        await event.answer(url, alert=True)
         return
 
 
