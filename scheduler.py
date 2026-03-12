@@ -10,7 +10,7 @@ scheduler = AsyncIOScheduler()
 
 async def daily_summary_job():
     """Ежедневная задача: собрать новости за последние 25 часов и отправить сводку."""
-    from messages import get_messages_by_time
+    from messages import get_messages_by_time, mark_messages_as_read
     from summarizer import summarize_texts
     from storage import save_summary
     from clients import bot_client
@@ -19,7 +19,7 @@ async def daily_summary_job():
 
     logger.info("Запуск ежедневной сводки...")
     try:
-        _, all_texts = await get_messages_by_time(hours=25)
+        all_messages_data, all_texts = await get_messages_by_time(hours=25)
 
         if not all_texts:
             await bot_client.send_message(YOUR_USER_ID, "☀️ Доброе утро! Новых сообщений нет.")
@@ -28,6 +28,8 @@ async def daily_summary_job():
         summary = await summarize_texts(all_texts)
         summary_id = save_summary(summary, len(all_texts))
         url = f"{SERVER_BASE_URL}/summary/{summary_id}"
+
+        await mark_messages_as_read(all_messages_data)
 
         date_str = datetime.date.today().strftime('%d.%m.%Y')
         await bot_client.send_message(
