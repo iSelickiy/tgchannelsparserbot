@@ -57,12 +57,36 @@ h1 {
 .summary-card .action {
     color: #4a9eff;
     font-weight: 500;
+    white-space: nowrap;
 }
 
 .empty {
     color: #888;
     text-align: center;
     padding: 40px 0;
+}
+
+/* Бейджи типа сводки */
+.badge {
+    display: inline-block;
+    font-size: 0.75rem;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 500;
+    vertical-align: middle;
+    margin-left: 6px;
+}
+
+.badge-daily {
+    background: #1a3a2a;
+    color: #4ade80;
+    border: 1px solid #2a5a3a;
+}
+
+.badge-manual {
+    background: #1a2a3a;
+    color: #60a5fa;
+    border: 1px solid #2a3a5a;
 }
 
 /* Содержимое сводки */
@@ -94,6 +118,80 @@ h1 {
     color: #888;
     font-size: 0.9rem;
     margin-bottom: 8px;
+}
+
+/* Чат по сводке */
+.chat-box {
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 12px;
+    padding: 16px;
+    margin-top: 24px;
+}
+
+.chat-title {
+    font-size: 0.95rem;
+    color: #888;
+    margin-bottom: 12px;
+}
+
+.chat-form {
+    display: flex;
+    gap: 8px;
+}
+
+.chat-form input {
+    flex: 1;
+    background: #0f0f0f;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 10px 14px;
+    color: #e0e0e0;
+    font-size: 0.95rem;
+    outline: none;
+}
+
+.chat-form input:focus {
+    border-color: #4a9eff;
+}
+
+.chat-form button {
+    background: #4a9eff;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 16px;
+    color: #fff;
+    font-size: 1.1rem;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.chat-form button:hover {
+    background: #3a8eff;
+}
+
+.chat-form button:disabled {
+    background: #333;
+    cursor: wait;
+}
+
+.chat-answer {
+    background: #0f0f0f;
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    color: #e0e0e0;
+}
+
+.chat-answer.loading {
+    color: #888;
+    font-style: italic;
+}
+
+.chat-answer.error {
+    color: #f87171;
 }
 
 /* Мобильная адаптация */

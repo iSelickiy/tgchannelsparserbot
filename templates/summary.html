@@ -8,12 +8,73 @@
 </head>
 <body>
     <div class="container">
-        <a href="/" class="back-link">← Все сводки</a>
+        <a href="/" class="back-link">&larr; Все сводки</a>
         <h1>Сводка за {{ summary.date }}</h1>
-        <div class="meta">{{ summary.message_count }} сообщений обработано</div>
+        <div class="meta">
+            {{ summary.message_count }} сообщений обработано
+            {% if summary.summary_type == 'daily' %}
+                <span class="badge badge-daily">Ежедневная</span>
+            {% else %}
+                <span class="badge badge-manual">Ручная</span>
+            {% endif %}
+        </div>
         <div class="content">
             {{ html_content | safe }}
         </div>
+
+        <!-- Чат по сводке -->
+        <div class="chat-box">
+            <div class="chat-title">Задать вопрос по сводке</div>
+            <div id="chat-answer" class="chat-answer" style="display:none;"></div>
+            <form id="chat-form" class="chat-form">
+                <input type="text" id="chat-input" placeholder="Например: что нового в технологиях?" maxlength="500" autocomplete="off">
+                <button type="submit" id="chat-btn">&#10148;</button>
+            </form>
+        </div>
     </div>
+
+    <script>
+    (function() {
+        const form = document.getElementById('chat-form');
+        const input = document.getElementById('chat-input');
+        const btn = document.getElementById('chat-btn');
+        const answerEl = document.getElementById('chat-answer');
+        const summaryId = {{ summary.id }};
+
+        form.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const q = input.value.trim();
+            if (!q) return;
+
+            btn.disabled = true;
+            btn.textContent = '...';
+            answerEl.style.display = 'block';
+            answerEl.className = 'chat-answer loading';
+            answerEl.textContent = 'Думаю...';
+
+            try {
+                const res = await fetch('/api/ask', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({summary_id: summaryId, question: q})
+                });
+                const data = await res.json();
+                if (data.error) {
+                    answerEl.className = 'chat-answer error';
+                    answerEl.textContent = data.error;
+                } else {
+                    answerEl.className = 'chat-answer';
+                    answerEl.textContent = data.answer;
+                }
+            } catch (err) {
+                answerEl.className = 'chat-answer error';
+                answerEl.textContent = 'Ошибка соединения';
+            }
+
+            btn.disabled = false;
+            btn.textContent = '\u279E';
+        });
+    })();
+    </script>
 </body>
 </html>

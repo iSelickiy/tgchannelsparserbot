@@ -204,11 +204,12 @@ async def history_handler(event):
 
     buttons = []
     for s in summaries:
-        label = f"№{s['id']} — {s['date']} ({s['message_count']} сообщ.)"
+        tag = "☀️" if s.get('summary_type') == 'daily' else "✋"
+        label = f"{tag} №{s['id']} — {s['date']} ({s['message_count']} сообщ.)"
         buttons.append([Button.url(label, f"{SERVER_BASE_URL}/summary/{s['id']}")])
 
     buttons.append([Button.inline("🏠 Главное меню", data="menu")])
-    msg = await event.respond("📚 Сводки за последние 30 дней:", buttons=buttons)
+    msg = await event.respond("📚 Сводки (☀️ежедневные / ✋ручные):", buttons=buttons)
     await track(event.sender_id, msg)
 
 
@@ -237,7 +238,7 @@ async def summary_request_handler(event):
             await track(event.sender_id, m)
 
         summary = await summarize_texts(all_texts, progress_callback=progress)
-        summary_id = save_summary(summary, len(all_texts))
+        summary_id = save_summary(summary, len(all_texts), summary_type='manual')
 
         await delete_bot_messages(event.sender_id, event.chat_id)
         msg = await event.respond(

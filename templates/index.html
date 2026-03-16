@@ -8,13 +8,22 @@
 </head>
 <body>
     <div class="container">
-        <h1>📰 Мои сводки</h1>
+        <h1>Мои сводки</h1>
         <div class="summary-list">
             {% for s in summaries %}
             <a href="/summary/{{ s.id }}" class="summary-card">
-                <div class="date">{{ s.date }}</div>
-                <div class="meta">{{ s.message_count }} сообщений</div>
-                <div class="action">Читать →</div>
+                <div class="card-left">
+                    <div class="date">{{ s.date }}</div>
+                    <div class="meta">
+                        {{ s.message_count }} сообщений
+                        {% if s.summary_type == 'daily' %}
+                            <span class="badge badge-daily">Ежедневная</span>
+                        {% else %}
+                            <span class="badge badge-manual">Ручная</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="action">Читать &rarr;</div>
             </a>
             {% else %}
             <p class="empty">Сводок пока нет. Запроси первую сводку в боте!</p>

@@ -36,6 +36,37 @@ async def view_summary(request):
     return {'summary': summary, 'html_content': html_content}
 
 
+@routes.post('/api/ask')
+async def ask_question(request):
+    """API для чата по сводке: принимает summary_id и question, возвращает ответ."""
+    from summarizer import ask_about_summary
+
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({'error': 'Invalid JSON'}, status=400)
+
+    summary_id = data.get('summary_id')
+    question = (data.get('question') or '').strip()
+
+    if not summary_id or not question:
+        return web.json_response({'error': 'summary_id and question required'}, status=400)
+
+    if len(question) > 500:
+        return web.json_response({'error': 'Question too long (max 500 chars)'}, status=400)
+
+    summary = get_summary(int(summary_id))
+    if not summary:
+        return web.json_response({'error': 'Summary not found'}, status=404)
+
+    try:
+        answer = await ask_about_summary(summary['content'], question)
+        return web.json_response({'answer': answer})
+    except Exception as e:
+        logger.exception("Error in /api/ask")
+        return web.json_response({'error': str(e)}, status=500)
+
+
 async def create_web_app():
     app = web.Application()
     aiohttp_jinja2.setup(app, loader=jinja2.FileSystemLoader('templates'))
