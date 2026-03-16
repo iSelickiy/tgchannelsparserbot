@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Сводка за {{ summary.date }}</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v=3">
 </head>
 <body>
     <div class="container">
@@ -21,120 +21,63 @@
         <div class="content">
             {{ html_content | safe }}
         </div>
-    </div>
 
-    <!-- Плавающая кнопка чата -->
-    <button id="chat-toggle" class="chat-toggle" aria-label="Открыть чат">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-        </svg>
-    </button>
-
-    <!-- Окно чата -->
-    <div id="chat-panel" class="chat-panel hidden">
-        <div class="chat-header">
-            <span class="chat-header-title">Спросить по сводке</span>
-            <button id="chat-close" class="chat-close" aria-label="Закрыть">&times;</button>
-        </div>
-        <div id="chat-messages" class="chat-messages">
-            <div class="chat-welcome">
-                Задайте вопрос по сводке или о любой упомянутой теме
+        <!-- Чат по сводке -->
+        <div class="chat-section">
+            <div class="chat-header">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                <span>Спросить по сводке</span>
             </div>
+            <div id="chat-answer" class="chat-answer"></div>
+            <form id="chat-form" class="chat-form">
+                <input type="text" id="chat-input" placeholder="Например: что за ошибки нашли в Firefox?" maxlength="500" autocomplete="off">
+                <button type="submit" id="chat-btn" class="chat-send">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+                </button>
+            </form>
         </div>
-        <form id="chat-form" class="chat-input-area">
-            <textarea id="chat-input" rows="1" placeholder="Напишите вопрос..." maxlength="500"></textarea>
-            <button type="submit" id="chat-btn" class="chat-send" aria-label="Отправить">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
-                </svg>
-            </button>
-        </form>
     </div>
 
     <script>
     (function() {
-        const toggle = document.getElementById('chat-toggle');
-        const panel = document.getElementById('chat-panel');
-        const closeBtn = document.getElementById('chat-close');
-        const form = document.getElementById('chat-form');
-        const input = document.getElementById('chat-input');
-        const btn = document.getElementById('chat-btn');
-        const messages = document.getElementById('chat-messages');
-        const summaryId = {{ summary.id }};
+        var form = document.getElementById('chat-form');
+        var input = document.getElementById('chat-input');
+        var btn = document.getElementById('chat-btn');
+        var answerEl = document.getElementById('chat-answer');
+        var summaryId = {{ summary.id }};
 
-        toggle.addEventListener('click', () => {
-            panel.classList.remove('hidden');
-            toggle.classList.add('hidden');
-            input.focus();
-        });
-
-        closeBtn.addEventListener('click', () => {
-            panel.classList.add('hidden');
-            toggle.classList.remove('hidden');
-        });
-
-        // Автоматическая высота textarea
-        input.addEventListener('input', () => {
-            input.style.height = 'auto';
-            input.style.height = Math.min(input.scrollHeight, 100) + 'px';
-        });
-
-        // Enter отправляет, Shift+Enter — перенос строки
-        input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                form.dispatchEvent(new Event('submit'));
-            }
-        });
-
-        function addMessage(text, type) {
-            // Убираем welcome если есть
-            const welcome = messages.querySelector('.chat-welcome');
-            if (welcome) welcome.remove();
-
-            const msg = document.createElement('div');
-            msg.className = 'chat-msg chat-msg-' + type;
-            msg.textContent = text;
-            messages.appendChild(msg);
-            messages.scrollTop = messages.scrollHeight;
-            return msg;
-        }
-
-        form.addEventListener('submit', async (e) => {
+        form.addEventListener('submit', function(e) {
             e.preventDefault();
-            const q = input.value.trim();
-            if (!q) return;
-
-            // Очищаем прошлую пару Q&A
-            messages.querySelectorAll('.chat-msg').forEach(el => el.remove());
-
-            addMessage(q, 'user');
-            input.value = '';
-            input.style.height = 'auto';
+            var q = input.value.trim();
+            if (!q || btn.disabled) return;
 
             btn.disabled = true;
-            const thinking = addMessage('Думаю...', 'thinking');
+            answerEl.className = 'chat-answer chat-answer-loading';
+            answerEl.textContent = 'Думаю...';
+            answerEl.style.display = 'block';
 
-            try {
-                const res = await fetch('/api/ask', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({summary_id: summaryId, question: q})
-                });
-                const data = await res.json();
-                thinking.remove();
+            fetch('/api/ask', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({summary_id: summaryId, question: q})
+            })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
                 if (data.error) {
-                    addMessage(data.error, 'error');
+                    answerEl.className = 'chat-answer chat-answer-error';
+                    answerEl.textContent = data.error;
                 } else {
-                    addMessage(data.answer, 'assistant');
+                    answerEl.className = 'chat-answer chat-answer-ok';
+                    answerEl.textContent = data.answer;
                 }
-            } catch (err) {
-                thinking.remove();
-                addMessage('Ошибка соединения', 'error');
-            }
-
-            btn.disabled = false;
-            input.focus();
+            })
+            .catch(function() {
+                answerEl.className = 'chat-answer chat-answer-error';
+                answerEl.textContent = 'Ошибка соединения';
+            })
+            .finally(function() {
+                btn.disabled = false;
+            });
         });
     })();
     </script>
