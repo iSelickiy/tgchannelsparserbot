@@ -61,7 +61,8 @@ async def ask_question(request):
 
     try:
         answer = await ask_about_summary(summary['content'], question)
-        return web.json_response({'answer': answer})
+        answer_html = md.markdown(answer, extensions=['extra', 'nl2br'])
+        return web.json_response({'answer': answer, 'answer_html': answer_html})
     except Exception as e:
         logger.exception("Error in /api/ask")
         return web.json_response({'error': str(e)}, status=500)

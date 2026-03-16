@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Сводка за {{ summary.date }}</title>
-    <link rel="stylesheet" href="/static/style.css?v=3">
+    <link rel="stylesheet" href="/static/style.css?v=4">
 </head>
 <body>
     <div class="container">
@@ -28,7 +28,9 @@
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                 <span>Спросить по сводке</span>
             </div>
-            <div id="chat-answer" class="chat-answer"></div>
+            <div id="chat-messages" class="chat-messages">
+                <div class="chat-welcome">Задайте вопрос по сводке или о любой упомянутой теме</div>
+            </div>
             <form id="chat-form" class="chat-form">
                 <input type="text" id="chat-input" placeholder="Например: что за ошибки нашли в Firefox?" maxlength="500" autocomplete="off">
                 <button type="submit" id="chat-btn" class="chat-send">
@@ -43,18 +45,36 @@
         var form = document.getElementById('chat-form');
         var input = document.getElementById('chat-input');
         var btn = document.getElementById('chat-btn');
-        var answerEl = document.getElementById('chat-answer');
+        var messages = document.getElementById('chat-messages');
         var summaryId = {{ summary.id }};
+
+        function addBubble(content, type, isHtml) {
+            // Убираем welcome
+            var welcome = messages.querySelector('.chat-welcome');
+            if (welcome) welcome.remove();
+
+            var bubble = document.createElement('div');
+            bubble.className = 'chat-bubble chat-bubble-' + type;
+            if (isHtml) {
+                bubble.innerHTML = content;
+            } else {
+                bubble.textContent = content;
+            }
+            messages.appendChild(bubble);
+            messages.scrollTop = messages.scrollHeight;
+            return bubble;
+        }
 
         form.addEventListener('submit', function(e) {
             e.preventDefault();
             var q = input.value.trim();
             if (!q || btn.disabled) return;
 
+            addBubble(q, 'user', false);
+            input.value = '';
             btn.disabled = true;
-            answerEl.className = 'chat-answer chat-answer-loading';
-            answerEl.textContent = 'Думаю...';
-            answerEl.style.display = 'block';
+
+            var thinking = addBubble('Думаю...', 'thinking', false);
 
             fetch('/api/ask', {
                 method: 'POST',
@@ -63,20 +83,20 @@
             })
             .then(function(res) { return res.json(); })
             .then(function(data) {
+                thinking.remove();
                 if (data.error) {
-                    answerEl.className = 'chat-answer chat-answer-error';
-                    answerEl.textContent = data.error;
+                    addBubble(data.error, 'error', false);
                 } else {
-                    answerEl.className = 'chat-answer chat-answer-ok';
-                    answerEl.textContent = data.answer;
+                    addBubble(data.answer_html || data.answer, 'assistant', !!data.answer_html);
                 }
             })
             .catch(function() {
-                answerEl.className = 'chat-answer chat-answer-error';
-                answerEl.textContent = 'Ошибка соединения';
+                thinking.remove();
+                addBubble('Ошибка соединения', 'error', false);
             })
             .finally(function() {
                 btn.disabled = false;
+                input.focus();
             });
         });
     })();
